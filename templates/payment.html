@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Payment</title>
+    <script src="https://in.paychangu.com/js/popup.js"></script>
+</head>
+<body>
+    <form>
+        <div id="wrapper"></div>
+        <button type="button" onClick="makePayment()">Pay Now</button>
+    </form>
+
+    <script>
+    function makePayment() {
+        PaychanguCheckout({
+            "public_key": "pub-test-HYSBQpa5K91mmXMHrjhkmC6mAjObPJ2u",
+            "tx_ref": "{{ charge_id }}",
+            "amount": parseInt({{ amount }}),  // Convertendo para inteiro
+            "currency": "MWK",
+            "callback_url": window.location.origin + "/wallet/verify-deposit/{{ charge_id }}",
+            "return_url": window.location.origin + "/wallet/deposit/result",
+            "customer": {
+                "email": "{{ email }}",
+                "first_name": "{{ first_name }}",
+                "last_name": "{{ last_name }}"
+            },
+            "customization": {
+                "title": "Wallet Deposit",
+                "description": "Deposit funds to your wallet"
+            }
+        });
+    }
+    </script>
+</body>
+</html> 
