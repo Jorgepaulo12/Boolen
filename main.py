@@ -13,7 +13,7 @@ async def lifespan(app: FastAPI):
 
 # Configuração do FastAPI
 app = FastAPI(
-    title="Course Management System",
+    title="Course Management Boolen",
     lifespan=lifespan
 )
 
