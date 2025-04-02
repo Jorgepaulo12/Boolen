@@ -43,6 +43,7 @@ class Course(CourseBase):
     likes_count: int = 0
     dislikes_count: int = 0
     user_reaction: Optional[bool] = None  # True para like, False para dislike, None para nenhum
+    liked: bool = False  # Indica se o usuário atual deu like no curso
 
     class Config:
         from_attributes = True

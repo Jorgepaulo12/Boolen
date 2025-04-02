@@ -30,4 +30,10 @@ async def get_course(db: AsyncSession, course_id: int) -> models.Course:
     result = await db.execute(
         select(models.Course).where(models.Course.id == course_id)
     )
-    return result.scalar_one_or_none() 
+    course = result.scalar_one_or_none()
+    if not course:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Course with id {course_id} not found"
+        )
+    return course

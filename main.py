@@ -45,5 +45,6 @@ async def root():
 
 if __name__ == "__main__":
     import os
+    import uvicorn
     port = int(os.getenv("PORT", 8080))  # Usa 8080 como padrão
     uvicorn.run(app, host="0.0.0.0", port=port)

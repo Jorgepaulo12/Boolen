@@ -70,7 +70,6 @@ class CourseLike(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     course_id = Column(Integer, ForeignKey("courses.id"))
-    is_like = Column(Boolean)  # True para like, False para dislike
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", backref="course_likes")

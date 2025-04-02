@@ -60,9 +60,33 @@ async def create_course(
     return course
 
 @course_router.get("/", response_model=List[schemas.Course])
-async def list_courses(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(models.Course))
-    return result.scalars().all()
+async def list_courses(
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    # Buscar todos os cursos
+    courses = await db.execute(select(models.Course))
+    courses = courses.scalars().all()
+    
+    # Para cada curso, verificar se o usuário atual deu like
+    for course in courses:
+        reaction = await db.execute(
+            select(models.CourseLike)
+            .where(
+                models.CourseLike.user_id == current_user.id,
+                models.CourseLike.course_id == course.id
+            )
+        )
+        course.liked = reaction.scalar_one_or_none() is not None
+        
+        # Contar total de likes
+        likes = await db.execute(
+            select(models.CourseLike)
+            .where(models.CourseLike.course_id == course.id)
+        )
+        course.likes_count = len(likes.scalars().all())
+    
+    return courses
 
 @course_router.post("/{course_id}/purchase")
 async def purchase_course(
@@ -144,10 +168,9 @@ async def download_course(
         media_type='application/zip'
     )
 
-@course_router.post("/{course_id}/reaction")
-async def toggle_course_reaction(
+@course_router.post("/{course_id}/like")
+async def toggle_course_like(
     course_id: int,
-    is_like: bool,
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -156,7 +179,7 @@ async def toggle_course_reaction(
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    # Verificar se já existe uma reação do usuário
+    # Verificar se já existe um like do usuário
     result = await db.execute(
         select(models.CourseLike)
         .where(
@@ -164,49 +187,33 @@ async def toggle_course_reaction(
             models.CourseLike.course_id == course_id
         )
     )
-    existing_reaction = result.scalar_one_or_none()
+    existing_like = result.scalar_one_or_none()
 
-    if existing_reaction:
-        if existing_reaction.is_like == is_like:
-            # Se a reação é a mesma, remover a reação
-            await db.delete(existing_reaction)
-            await db.commit()
-            message = "Reaction removed"
-        else:
-            # Se a reação é diferente, atualizar
-            existing_reaction.is_like = is_like
-            await db.commit()
-            message = "Reaction updated"
-    else:
-        # Criar nova reação
-        new_reaction = models.CourseLike(
-            user_id=current_user.id,
-            course_id=course_id,
-            is_like=is_like
-        )
-        db.add(new_reaction)
+    if existing_like:
+        # Se já existe um like, remover
+        await db.delete(existing_like)
         await db.commit()
-        message = "Reaction added"
+        message = "Like removed"
+        liked = False
+    else:
+        # Criar novo like
+        new_like = models.CourseLike(
+            user_id=current_user.id,
+            course_id=course_id
+        )
+        db.add(new_like)
+        await db.commit()
+        message = "Like added"
+        liked = True
 
-    # Contar likes e dislikes atualizados
+    # Contar total de likes
     likes_count = await db.execute(
         select(models.CourseLike)
-        .where(
-            models.CourseLike.course_id == course_id,
-            models.CourseLike.is_like == True
-        )
-    )
-    dislikes_count = await db.execute(
-        select(models.CourseLike)
-        .where(
-            models.CourseLike.course_id == course_id,
-            models.CourseLike.is_like == False
-        )
+        .where(models.CourseLike.course_id == course_id)
     )
 
     return {
         "message": message,
         "likes_count": len(likes_count.scalars().all()),
-        "dislikes_count": len(dislikes_count.scalars().all()),
-        "current_user_reaction": is_like if existing_reaction or message == "Reaction added" else None
-    } 
+        "liked": liked
+    }
