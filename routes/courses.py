@@ -59,6 +59,19 @@ async def create_course(
 
     return course
 
+@course_router.get("/public", response_model=List[schemas.Course])
+async def list_public_courses(db: AsyncSession = Depends(get_db)):
+    # Buscar todos os cursos disponíveis publicamente
+    courses = await db.execute(select(models.Course))
+    courses = courses.scalars().all()
+    
+    # Inicializar campos que requerem autenticação com valores padrão
+    for course in courses:
+        course.liked = False
+        course.likes_count = 0
+    
+    return courses
+
 @course_router.get("/", response_model=List[schemas.Course])
 async def list_courses(
     current_user: models.User = Depends(get_current_user),
