@@ -23,7 +23,13 @@ async def login_for_access_token(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = create_access_token(
+        data={
+            "sub": user.username,
+            "user_id": user.id,
+            "is_admin": user.is_admin
+        }
+    )
     return {"access_token": access_token, "token_type": "bearer"}
 
 @auth_router.post("/register", response_model=schemas.User)
@@ -39,4 +45,4 @@ async def register_user(
     users = result.scalars().all()
     is_first_user = len(users) == 0
     
-    return await create_user(db=db, user=user, is_admin=is_first_user) 
+    return await create_user(db=db, user=user, is_admin=is_first_user)

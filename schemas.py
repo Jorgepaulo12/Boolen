@@ -24,6 +24,8 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+    user_id: Optional[int] = None
+    is_admin: Optional[bool] = False
 
 class CourseBase(BaseModel):
     title: str
@@ -41,9 +43,7 @@ class Course(CourseBase):
     uploaded_by: int
     created_at: datetime
     likes_count: int = 0
-    dislikes_count: int = 0
-    user_reaction: Optional[bool] = None  # True para like, False para dislike, None para nenhum
-    liked: bool = False  # Indica se o usuário atual deu like no curso
+    liked: bool = False  # Indica se o usuário fornecido deu like no curso
 
     class Config:
         from_attributes = True
