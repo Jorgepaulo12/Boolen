@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import List
+from typing import List, Optional
 import os
 import shutil
 
@@ -59,38 +59,29 @@ async def create_course(
 
     return course
 
-@course_router.get("/public", response_model=List[schemas.Course])
-async def list_public_courses(db: AsyncSession = Depends(get_db)):
-    # Buscar todos os cursos disponíveis publicamente
-    courses = await db.execute(select(models.Course))
-    courses = courses.scalars().all()
-    
-    # Inicializar campos que requerem autenticação com valores padrão
-    for course in courses:
-        course.liked = False
-        course.likes_count = 0
-    
-    return courses
-
 @course_router.get("/", response_model=List[schemas.Course])
 async def list_courses(
-    current_user: models.User = Depends(get_current_user),
+    user_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db)
 ):
     # Buscar todos os cursos
     courses = await db.execute(select(models.Course))
     courses = courses.scalars().all()
     
-    # Para cada curso, verificar se o usuário atual deu like
+    # Para cada curso
     for course in courses:
-        reaction = await db.execute(
-            select(models.CourseLike)
-            .where(
-                models.CourseLike.user_id == current_user.id,
-                models.CourseLike.course_id == course.id
+        # Verificar likes se um user_id foi fornecido
+        if user_id:
+            reaction = await db.execute(
+                select(models.CourseLike)
+                .where(
+                    models.CourseLike.user_id == user_id,
+                    models.CourseLike.course_id == course.id
+                )
             )
-        )
-        course.liked = reaction.scalar_one_or_none() is not None
+            course.liked = reaction.scalar_one_or_none() is not None
+        else:
+            course.liked = False
         
         # Contar total de likes
         likes = await db.execute(
