@@ -66,6 +66,11 @@ async def create_user(db: AsyncSession, user: schemas.UserCreate, is_admin: bool
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
+    
+    # Create wallet automatically for new user
+    from utils import get_or_create_wallet
+    await get_or_create_wallet(db, db_user.id)
+    
     return db_user
 
 async def promote_to_admin(db: AsyncSession, user_id: int):
