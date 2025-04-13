@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime, LargeBinary, Float
+from sqlalchemy import Boolean, Column, Integer, String, ForeignKey, DateTime, Float, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
@@ -9,10 +9,10 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True)
-    username = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    profile_picture = Column(String, nullable=True)
+    email = Column(String(255), unique=True, index=True)
+    username = Column(String(100), unique=True, index=True)
+    hashed_password = Column(String(255))
+    profile_picture = Column(String(255), nullable=True)
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     courses_downloaded = relationship("CourseDownload", back_populates="user")
@@ -24,6 +24,7 @@ class Wallet(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True)
     balance = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
     user = relationship("User", back_populates="wallet")
     transactions = relationship("WalletTransaction", back_populates="wallet")
 
@@ -33,9 +34,9 @@ class WalletTransaction(Base):
     id = Column(Integer, primary_key=True, index=True)
     wallet_id = Column(Integer, ForeignKey("wallets.id"))
     amount = Column(Float)
-    transaction_type = Column(String)  # "deposit" ou "purchase"
-    payment_ref = Column(String)
-    status = Column(String)  # "pending", "completed", "failed"
+    transaction_type = Column(String(50))  # deposit, purchase, etc.
+    payment_ref = Column(String(255), nullable=True)
+    status = Column(String(50))  # pending, completed, failed
     created_at = Column(DateTime, default=datetime.utcnow)
     wallet = relationship("Wallet", back_populates="transactions")
 
@@ -43,12 +44,12 @@ class Course(Base):
     __tablename__ = "courses"
 
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, index=True)
-    description = Column(String)
+    title = Column(String(255), index=True)
+    description = Column(Text)
     price = Column(Float)
     duration_minutes = Column(Integer)
-    cover_image = Column(String)  # caminho para a imagem de capa
-    file_path = Column(String)
+    cover_image = Column(String(255))  # caminho para a imagem de capa
+    file_path = Column(String(255))
     uploaded_by = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     downloads = relationship("CourseDownload", back_populates="course")
@@ -59,8 +60,8 @@ class CourseDownload(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     course_id = Column(Integer, ForeignKey("courses.id"))
-    downloaded_at = Column(DateTime, default=datetime.utcnow)
     transaction_id = Column(Integer, ForeignKey("wallet_transactions.id"))
+    downloaded_at = Column(DateTime, default=datetime.utcnow)
     user = relationship("User", back_populates="courses_downloaded")
     course = relationship("Course", back_populates="downloads")
 
