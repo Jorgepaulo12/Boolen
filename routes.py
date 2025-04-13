@@ -17,6 +17,17 @@ from payment import paychangu
 from utils import get_or_create_wallet, get_wallet, get_course
 from dependencies import ACCESS_TOKEN_EXPIRE_MINUTES
 
+# Configurar diretórios de mídia
+MEDIA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "media")
+PROFILE_PICTURES_DIR = os.path.join(MEDIA_DIR, "profile_pictures")
+COURSE_COVERS_DIR = os.path.join(MEDIA_DIR, "course_covers")
+COURSE_FILES_DIR = os.path.join(MEDIA_DIR, "course_files")
+
+# Criar diretórios se não existirem
+os.makedirs(PROFILE_PICTURES_DIR, exist_ok=True)
+os.makedirs(COURSE_COVERS_DIR, exist_ok=True)
+os.makedirs(COURSE_FILES_DIR, exist_ok=True)
+
 # Router de Autenticação
 auth_router = APIRouter()
 
@@ -50,6 +61,15 @@ async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get
 # Router de Cursos
 course_router = APIRouter()
 
+@course_router.get("/cover/{course_id}")
+async def get_course_cover(course_id: int, db: AsyncSession = Depends(get_db)):
+    """Endpoint para servir a imagem de capa do curso"""
+    course = await get_course(db, course_id)
+    if not course or not course.cover_image:
+        raise HTTPException(status_code=404, detail="Course cover not found")
+    
+    return FileResponse(course.cover_image)
+
 @course_router.post("/", response_model=schemas.Course)
 async def create_course(
     title: str = Form(...),
@@ -67,17 +87,27 @@ async def create_course(
     if not cover_image.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
         raise HTTPException(status_code=400, detail="Cover image must be PNG or JPEG")
 
-    # Salvar imagem de capa
-    cover_path = os.path.join(COURSE_DIR, f"covers/{title}_{cover_image.filename}")
-    os.makedirs(os.path.dirname(cover_path), exist_ok=True)
-    with open(cover_path, "wb") as buffer:
-        shutil.copyfileobj(cover_image.file, buffer)
+    # Gerar nomes únicos para os arquivos
+    cover_filename = f"{uuid.uuid4()}_{cover_image.filename}"
+    course_filename = f"{uuid.uuid4()}_{course_file.filename}"
+    
+    # Definir caminhos completos
+    cover_path = os.path.join(COURSE_COVERS_DIR, cover_filename)
+    course_path = os.path.join(COURSE_FILES_DIR, course_filename)
 
-    # Salvar arquivo do curso
-    course_path = os.path.join(COURSE_DIR, f"files/{title}_{course_file.filename}")
-    os.makedirs(os.path.dirname(course_path), exist_ok=True)
-    with open(course_path, "wb") as buffer:
-        shutil.copyfileobj(course_file.file, buffer)
+    # Salvar arquivos
+    try:
+        with open(cover_path, "wb") as buffer:
+            shutil.copyfileobj(cover_image.file, buffer)
+        with open(course_path, "wb") as buffer:
+            shutil.copyfileobj(course_file.file, buffer)
+    except Exception as e:
+        # Limpar arquivos em caso de erro
+        if os.path.exists(cover_path):
+            os.remove(cover_path)
+        if os.path.exists(course_path):
+            os.remove(course_path)
+        raise HTTPException(status_code=500, detail=str(e))
 
     course = models.Course(
         title=title,
@@ -270,3 +300,51 @@ async def promote_user_to_admin(
     
     await get_current_admin(db, user_id)
     return {"message": f"User {user.username} promoted to admin"}
+
+# Router de Usuário
+user_router = APIRouter()
+
+@user_router.post("/profile/picture")
+async def update_profile_picture(
+    profile_picture: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    if not profile_picture.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
+        raise HTTPException(status_code=400, detail="Profile picture must be PNG or JPEG")
+
+    # Gerar nome único para o arquivo
+    filename = f"{uuid.uuid4()}_{profile_picture.filename}"
+    file_path = os.path.join(PROFILE_PICTURES_DIR, filename)
+    
+    # Remover foto antiga se existir
+    if current_user.profile_picture and os.path.exists(current_user.profile_picture):
+        try:
+            os.remove(current_user.profile_picture)
+        except:
+            pass  # Ignora erros ao tentar remover arquivo antigo
+    
+    # Salvar nova foto
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(profile_picture.file, buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Atualizar caminho no banco de dados
+    current_user.profile_picture = file_path
+    await db.commit()
+    
+    return {"message": "Profile picture updated successfully"}
+
+@user_router.get("/profile/picture/{user_id}")
+async def get_profile_picture(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Endpoint para servir a foto de perfil do usuário"""
+    stmt = select(models.User).where(models.User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if not user or not user.profile_picture:
+        raise HTTPException(status_code=404, detail="Profile picture not found")
+    
+    return FileResponse(user.profile_picture)
