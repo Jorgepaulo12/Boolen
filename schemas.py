@@ -1,9 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime
 
 class UserBase(BaseModel):
-    email: str
+    email: EmailStr
     username: str
 
 class UserCreate(UserBase):
@@ -11,9 +11,79 @@ class UserCreate(UserBase):
 
 class User(UserBase):
     id: int
-    is_admin: bool
-    created_at: datetime
     profile_picture: Optional[str] = None
+    is_admin: bool = False
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class CourseBase(BaseModel):
+    title: str
+    description: str
+    price: float
+    duration_minutes: int
+
+class CourseCreate(CourseBase):
+    pass
+
+class Course(CourseBase):
+    id: int
+    course_code: str
+    cover_image: Optional[str] = None
+    file_path: Optional[str] = None
+    uploaded_by: int
+    created_at: datetime
+    status: str
+    instructor: User
+
+    class Config:
+        from_attributes = True
+
+class CourseDownloadBase(BaseModel):
+    course_id: int
+
+class CourseDownload(CourseDownloadBase):
+    id: int
+    enrollment_code: str
+    user_id: int
+    downloaded_at: datetime
+    status: str = "active"
+    progress: float = 0.0
+    last_accessed: Optional[datetime] = None
+    course: Course
+    user: User
+
+    class Config:
+        from_attributes = True
+
+class WalletBase(BaseModel):
+    balance: float = 0.0
+
+class WalletCreate(WalletBase):
+    user_id: int
+
+class Wallet(WalletBase):
+    id: int
+    user_id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class WalletTransactionBase(BaseModel):
+    amount: float
+    transaction_type: str
+    payment_ref: Optional[str] = None
+
+class WalletTransactionCreate(WalletTransactionBase):
+    wallet_id: int
+
+class WalletTransaction(WalletTransactionBase):
+    id: int
+    wallet_id: int
+    status: str
+    created_at: datetime
 
     class Config:
         from_attributes = True
@@ -25,36 +95,13 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
-class CourseBase(BaseModel):
-    title: str
-    description: str
-
-class CourseCreate(CourseBase):
-    price: float
-    duration_minutes: int
-
-class Course(CourseBase):
-    id: int
-    price: float
-    duration_minutes: int
-    cover_image: str
-    uploaded_by: int
+class UserProfile(BaseModel):
+    email: str
+    username: str
+    profile_picture: Optional[str] = None
     created_at: datetime
-    likes_count: int = 0
-    dislikes_count: int = 0
-    user_reaction: Optional[bool] = None  # True para like, False para dislike, None para nenhum
-    liked: bool = False  # Indica se o usuário atual deu like no curso
-
-    class Config:
-        from_attributes = True
-
-class CourseDownloadCreate(BaseModel):
-    course_id: int
-
-class CourseDownload(CourseDownloadCreate):
-    id: int
-    user_id: int
-    downloaded_at: datetime
+    courses_downloaded: List[CourseDownload] = []
+    courses_created: List[Course] = []
 
     class Config:
         from_attributes = True
@@ -74,43 +121,6 @@ class PaymentVerification(BaseModel):
     ref_id: str
     status: str
     transaction_id: Optional[str] = None
-
-class WalletBase(BaseModel):
-    balance: float
-
-class Wallet(WalletBase):
-    id: int
-    user_id: int
-
-    class Config:
-        from_attributes = True
-
-class WalletTransactionBase(BaseModel):
-    amount: float
-    transaction_type: str
-
-class WalletTransaction(WalletTransactionBase):
-    id: int
-    wallet_id: int
-    payment_ref: Optional[str]
-    status: str
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-class DepositInitialize(BaseModel):
-    mobile: str
-    amount: str
-
-class UserProfile(BaseModel):
-    email: str
-    username: str
-    profile_picture: Optional[str] = None
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 class UserProfileUpdate(BaseModel):
     email: Optional[str] = None

@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Body
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from typing import List
 import os
 import shutil
+import uuid
+from datetime import datetime
 
 import models
 import schemas
@@ -14,6 +16,43 @@ from config import COURSE_DIR
 from utils import get_course, get_wallet
 
 course_router = APIRouter()
+
+@course_router.get("/code/{course_code}", response_model=schemas.Course)
+async def get_course_by_code(
+    course_code: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Buscar curso pelo código único"""
+    stmt = select(models.Course).where(models.Course.course_code == course_code)
+    result = await db.execute(stmt)
+    course = result.scalar_one_or_none()
+    
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    return course
+
+@course_router.get("/enrollment/{enrollment_code}", response_model=schemas.CourseDownload)
+async def get_enrollment_by_code(
+    enrollment_code: str,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Buscar matrícula pelo código único"""
+    stmt = select(models.CourseDownload).where(
+        models.CourseDownload.enrollment_code == enrollment_code
+    )
+    result = await db.execute(stmt)
+    enrollment = result.scalar_one_or_none()
+    
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Enrollment not found")
+    
+    # Verificar se o usuário é o dono da matrícula ou um admin
+    if enrollment.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized to access this enrollment")
+    
+    return enrollment
 
 @course_router.post("/", response_model=schemas.Course)
 async def create_course(
@@ -26,24 +65,40 @@ async def create_course(
     current_user: models.User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
+    # Validar arquivos
     if not course_file.filename.endswith('.zip'):
         raise HTTPException(status_code=400, detail="Course file must be a ZIP archive")
     
     if not cover_image.filename.lower().endswith(('.png', '.jpg', '.jpeg')):
         raise HTTPException(status_code=400, detail="Cover image must be PNG or JPEG")
 
-    # Salvar imagem de capa
-    cover_path = os.path.join(COURSE_DIR, f"covers/{title}_{cover_image.filename}")
-    os.makedirs(os.path.dirname(cover_path), exist_ok=True)
-    with open(cover_path, "wb") as buffer:
-        shutil.copyfileobj(cover_image.file, buffer)
+    # Gerar nomes únicos para os arquivos
+    cover_filename = f"{uuid.uuid4()}_{cover_image.filename}"
+    course_filename = f"{uuid.uuid4()}_{course_file.filename}"
+    
+    # Criar diretórios se não existirem
+    os.makedirs(os.path.join(COURSE_DIR, "covers"), exist_ok=True)
+    os.makedirs(os.path.join(COURSE_DIR, "files"), exist_ok=True)
+    
+    # Definir caminhos completos
+    cover_path = os.path.join(COURSE_DIR, f"covers/{cover_filename}")
+    course_path = os.path.join(COURSE_DIR, f"files/{course_filename}")
 
-    # Salvar arquivo do curso
-    course_path = os.path.join(COURSE_DIR, f"files/{title}_{course_file.filename}")
-    os.makedirs(os.path.dirname(course_path), exist_ok=True)
-    with open(course_path, "wb") as buffer:
-        shutil.copyfileobj(course_file.file, buffer)
+    # Salvar arquivos
+    try:
+        with open(cover_path, "wb") as buffer:
+            shutil.copyfileobj(cover_image.file, buffer)
+        with open(course_path, "wb") as buffer:
+            shutil.copyfileobj(course_file.file, buffer)
+    except Exception as e:
+        # Limpar arquivos em caso de erro
+        if os.path.exists(cover_path):
+            os.remove(cover_path)
+        if os.path.exists(course_path):
+            os.remove(course_path)
+        raise HTTPException(status_code=500, detail=str(e))
 
+    # Criar o curso
     course = models.Course(
         title=title,
         description=description,
@@ -51,12 +106,34 @@ async def create_course(
         duration_minutes=duration_minutes,
         cover_image=cover_path,
         file_path=course_path,
-        uploaded_by=current_user.id
+        uploaded_by=current_user.id,
+        status="draft"  # Inicialmente como rascunho
     )
     db.add(course)
     await db.commit()
     await db.refresh(course)
 
+    return course
+
+@course_router.put("/{course_id}/status", response_model=schemas.Course)
+async def update_course_status(
+    course_id: int,
+    status: str,
+    current_user: models.User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Atualizar o status do curso (draft, published, archived)"""
+    if status not in ["draft", "published", "archived"]:
+        raise HTTPException(status_code=400, detail="Invalid status. Must be draft, published, or archived")
+    
+    course = await get_course(db, course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+    
+    course.status = status
+    await db.commit()
+    await db.refresh(course)
+    
     return course
 
 @course_router.get("/public", response_model=List[schemas.Course])
@@ -230,3 +307,51 @@ async def toggle_course_like(
         "likes_count": len(likes_count.scalars().all()),
         "liked": liked
     }
+
+@course_router.get("/enrollments", response_model=List[schemas.CourseDownload])
+async def get_user_enrollments(
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Obter todas as matrículas do usuário atual"""
+    stmt = select(models.CourseDownload).where(
+        models.CourseDownload.user_id == current_user.id
+    )
+    result = await db.execute(stmt)
+    enrollments = result.scalars().all()
+    
+    return enrollments
+
+@course_router.put("/enrollment/{enrollment_code}/progress")
+async def update_enrollment_progress(
+    enrollment_code: str,
+    progress: float = Body(..., embed=True),
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Atualizar o progresso de uma matrícula"""
+    stmt = select(models.CourseDownload).where(
+        models.CourseDownload.enrollment_code == enrollment_code
+    )
+    result = await db.execute(stmt)
+    enrollment = result.scalar_one_or_none()
+    
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Enrollment not found")
+    
+    # Verificar se o usuário é o dono da matrícula
+    if enrollment.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this enrollment")
+    
+    # Atualizar progresso
+    enrollment.progress = min(100, max(0, progress))  # Limitar entre 0 e 100
+    enrollment.last_accessed = datetime.utcnow()
+    
+    # Se o progresso atingiu 100%, marcar como concluído
+    if enrollment.progress >= 100:
+        enrollment.status = "completed"
+    
+    await db.commit()
+    await db.refresh(enrollment)
+    
+    return {"message": "Progress updated successfully", "progress": enrollment.progress}
